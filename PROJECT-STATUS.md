@@ -31,7 +31,7 @@
 
 ## ✅ What's Working
 
-### Stage 1: Contract Input Extraction (COMPLETE)
+### Stage 1: Contract Input Extraction (COMPLETE & TESTED)
 
 Successfully extracts and calculates:
 - **phi** - Base salary + bonus: `salary + bonus + othann + allothtot`
@@ -48,7 +48,10 @@ Successfully extracts and calculates:
 - Proper merging of anncomp + codirfin tables
 - Handles stock split adjustments (AJEX)
 
-**Output:** `stage1_contract_inputs_YYYY.parquet`
+**Current Outputs Generated:**
+- ✅ `stage1_contract_inputs_1995.parquet` (67 CEOs)
+- ✅ `stage1_contract_inputs_2000.parquet` (36 CEOs)
+- Works for any year 1992-2024
 
 ### Infrastructure (SOLID)
 
@@ -172,8 +175,11 @@ python -m dittmann_maug.cli stage1 --year 2000 --rf 0.0664
 ## 📚 Reference Documentation
 
 - **Implementation Plan:** `docs/dittman-maug-contract-construction-procedure.md`
-- **Code Review:** `docs/code-review-20260210.md` (today)
-- **Roadmap:** `docs/implementation-roadmap.md` (today)
+- **Code Review:** `docs/code-review-20260210.md` (detailed technical review)
+- **Roadmap:** `docs/implementation-roadmap.md` (Stages 2-3 breakdown)
+- **Data Construction Manual:** `docs/DATA-CONSTRUCTION-MANUAL.md` (plain-language guide with verification checklist)
+- **Data Loading Architecture:** `docs/DATA-LOADING-ARCHITECTURE.md` (Dropbox integration & file loading)
+- **Core & Guay (2002) Reference:** `docs/references/core-guay-2002.md` (option aggregation algorithm)
 - **Original SAS:** `DROPBOX/dittman-maug-replication-materials/SAS/1 dataset construction/Dataset Construction Macro V4.sas`
 
 ---

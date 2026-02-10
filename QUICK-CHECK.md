@@ -80,16 +80,19 @@ MISSING:
 cd /Users/dhirajs/Desktop/project/Dev-dittmann-maug-contracts/dittmann-maug-contracts
 
 # Check if data files exist
-python -m dittmann_maug.cli check-data
+uv run python -m dittmann_maug.cli check-data
 
 # View input data statistics
-python -m dittmann_maug.cli inspect
+uv run python -m dittmann_maug.cli inspect
 
-# Build Stage 1 outputs
-python -m dittmann_maug.cli stage1 --year 2000 --rf 0.0664
+# Build Stage 1 outputs for different years
+uv run python -m dittmann_maug.cli stage1 --year 1995 --rf 0.0600  # Generates 67 CEOs
+uv run python -m dittmann_maug.cli stage1 --year 2000 --rf 0.0664  # Generates 36 CEOs
 
-# Output: .DROPBOX/out/stage1_contract_inputs_2000.parquet
+# Output saved to: ~/Dropbox/2026-dittman-maug-replication/data/out/
 ```
+
+✅ **TESTED & WORKING** - Both years successfully generate outputs
 
 ---
 

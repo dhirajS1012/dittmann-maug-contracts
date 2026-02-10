@@ -1,51 +1,26 @@
 # 🚀 Quick Start: Dropbox Setup
 
-## Easiest Way: Use the Setup Script
+⚠️ **Note:** Dropbox is already set up and operational! This guide is for reference if you need to change the path.
 
-The project includes an automated setup script that configures your Dropbox path. Just run it once!
+**Current Status:**
+- ✅ Dropbox path configured: `/Users/dhirajs/Dropbox/2026-dittman-maug-replication/data`
+- ✅ Environment variable: `DM_DROPBOX_ROOT` (in ~/.zshrc)
+- ✅ Pipeline working (67 CEOs from 1995, 36 CEOs from 2000)
 
-### Step 1: Run the Setup Script
+---
+
+## If You Need to Change the Dropbox Path
+
+### Easiest Way: Use the Setup Script
+
+The project includes an automated setup script that reconfigures your Dropbox path if needed.
 
 ```bash
 cd /Users/dhirajs/Desktop/project/Dev-dittmann-maug-contracts/dittmann-maug-contracts
-
-# Run the setup script
 ./setup-dropbox-env.sh
 ```
 
-### Step 2: Enter Your Dropbox Path
-
-The script will ask you for your Dropbox path. For example:
-
-```
-Enter your Dropbox path to ExecuComp data:
-/Users/dhirajs/Dropbox/Research/ExecuComp
-```
-
-Or just press **Enter** to use the default:
-```
-/Users/dhirajs/Dropbox/dittmann-maug-execucomp
-```
-
-### Step 3: Reload Your Shell
-
-```bash
-# If using zsh
-source ~/.zshrc
-
-# If using bash
-source ~/.bashrc
-```
-
-### Step 4: Verify It Worked
-
-```bash
-# Check the environment variable
-echo $DM_DROPBOX_ROOT
-
-# Should print your Dropbox path
-# /Users/dhirajs/Dropbox/Research/ExecuComp
-```
+Then reload: `source ~/.zshrc` (or `~/.bashrc`)
 
 ---
 
