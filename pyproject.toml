@@ -1,7 +1,11 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "dittmann-maug"
 version = "0.1.0"
-description = "Add your description here"
+description = "Replication of Dittman and Maug (2007) CEO compensation contract construction from ExecuComp data"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,3 +13,9 @@ dependencies = [
     "numpy>=2.4.2",
     "pandas>=3.0.0",
 ]
+
+[project.scripts]
+dittmann-maug = "dittmann_maug.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/py/dittmann_maug"]
