@@ -80,7 +80,9 @@ uv run dittmann-maug stage1 --year 2000 --rf 0.0664
 
 ## 📁 Data Setup
 
-To run the pipeline, you need to place ExecuComp parquet files at:
+### Option 1: Local DROPBOX Folder (Simple)
+
+Place ExecuComp parquet files at:
 
 ```
 DROPBOX/execucomp/
@@ -90,10 +92,110 @@ DROPBOX/execucomp/
 └── stgrttab.parquet      # (Optional, for Stage 3) Stock grant table
 ```
 
-Or set the `DM_DROPBOX_ROOT` environment variable:
+### Option 2: Dropbox Folder + Environment Variable (Recommended) ✅
+
+This is more convenient if your data is in Dropbox. It keeps data in one place and syncs automatically.
+
+#### Step 1: Set Up Dropbox Environment Variable
+
+**For zsh (if you use `zsh`):**
 
 ```bash
-export DM_DROPBOX_ROOT=/path/to/your/data
+# Add this line to your ~/.zshrc file
+echo 'export DM_DROPBOX_ROOT="$HOME/Dropbox/path-to-your-execucomp-data"' >> ~/.zshrc
+
+# Reload your shell
+source ~/.zshrc
+```
+
+**For bash (if you use `bash`):**
+
+```bash
+# Add this line to your ~/.bashrc file
+echo 'export DM_DROPBOX_ROOT="$HOME/Dropbox/path-to-your-execucomp-data"' >> ~/.bashrc
+
+# Reload your shell
+source ~/.bashrc
+```
+
+#### Step 2: Update the Path
+
+Replace `path-to-your-execucomp-data` with your actual Dropbox path:
+
+```bash
+# Example: If your data is in ~/Dropbox/Research/ExecuComp
+export DM_DROPBOX_ROOT="$HOME/Dropbox/Research/ExecuComp"
+
+# Or with full path
+export DM_DROPBOX_ROOT="/Users/dhirajs/Dropbox/Research/ExecuComp"
+```
+
+#### Step 3: Verify Setup
+
+```bash
+# Reload terminal to apply changes
+source ~/.zshrc   # or ~/.bashrc
+
+# Test it
+uv run python -m dittmann_maug.cli check-data
+
+# You should see the paths of your data files, or a helpful error message
+```
+
+#### Step 4: Expected Dropbox Structure
+
+Your Dropbox folder should have this structure:
+
+```
+~/Dropbox/Research/ExecuComp/          (or your chosen path)
+├── execucomp/
+│   ├── anncomp.parquet               # Annual compensation
+│   ├── codirfin.parquet              # Company/director/financial data
+│   ├── coperol.parquet               # (Optional)
+│   └── stgrttab.parquet              # (Optional, needed for Stage 3)
+└── out/
+    ├── stage1_contract_inputs_2000.parquet
+    ├── stage1_contract_inputs_1999.parquet
+    └── ... (outputs saved here)
+```
+
+---
+
+### Comparison: Local vs Dropbox
+
+| Feature | Local `DROPBOX/` | Dropbox + Env Var |
+|---------|------------------|-------------------|
+| **Setup time** | 2 minutes | 3 minutes |
+| **Data backup** | Manual | Automatic ✅ |
+| **Disk usage** | ~5GB locally | Only in Dropbox |
+| **Multi-machine** | Copy to each | Works everywhere ✅ |
+| **Data sync** | Manual | Auto-sync ✅ |
+| **Simplicity** | Simpler | Better for teams ✅ |
+
+---
+
+### Troubleshooting
+
+**If you get "ModuleNotFoundError":**
+```bash
+cd /Users/dhirajs/Desktop/project/Dev-dittmann-maug-contracts/dittmann-maug-contracts
+uv run python -m dittmann_maug.cli check-data
+```
+
+**If you get "Missing required files":**
+- Check that `DM_DROPBOX_ROOT` is set correctly
+- Verify parquet files exist in `$DM_DROPBOX_ROOT/execucomp/`
+- Verify Dropbox is syncing (check Dropbox app)
+
+**To check your environment variable:**
+```bash
+echo $DM_DROPBOX_ROOT
+# Should print your Dropbox path
+```
+
+**To temporarily override:**
+```bash
+export DM_DROPBOX_ROOT="/different/path"
 uv run python -m dittmann_maug.cli check-data
 ```
 
