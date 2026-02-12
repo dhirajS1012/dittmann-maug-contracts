@@ -1,202 +1,86 @@
-# Setup & Installation Guide
+# Setup Guide
 
-## ✅ Installation Complete
+## Installation Steps
 
-The project is now properly set up. Here's what was done:
-
-### Installation Steps
-
-1. **Updated `pyproject.toml`** with:
-   - Build system configuration (hatchling)
-   - CLI script entry point
-   - Package path configuration for `src/py/` layout
-
-2. **Synced uv environment**:
-   ```bash
-   uv sync
-   ```
-   This installed the package and all dependencies
-
-3. **Verified CLI works**:
-   ```bash
-   uv run python -m dittmann_maug.cli check-data
-   ```
-
----
-
-## 🎯 Current Status
-
-✅ **Package installed and CLI functional**
-
-The error you see is **expected** - it's telling you that the ExecuComp data files are missing:
+Step 1: Run uv sync
 
 ```
-FileNotFoundError: Missing required files:
-- DROPBOX/execucomp/anncomp.parquet
-- DROPBOX/execucomp/codirfin.parquet
+uv sync
 ```
 
-This is normal! You need to add the ExecuComp data files to proceed.
+Step 2: Test with this command
 
----
+```
+uv run python -m dittmann_maug.cli check-data
+```
 
-## 📊 How to Use
+## How to Run Commands
 
-### Option 1: Using `uv run` (Recommended)
+Navigate to project root:
 
-```bash
-# Navigate to project root
+```
 cd /Users/dhirajs/Desktop/project/Dev-dittmann-maug-contracts/dittmann-maug-contracts
+```
 
-# Run any command with uv
+Run with uv:
+
+```
 uv run python -m dittmann_maug.cli check-data
 uv run python -m dittmann_maug.cli inspect
 uv run python -m dittmann_maug.cli stage1 --year 2000 --rf 0.0664
 ```
 
-### Option 2: Using the venv directly
+Or activate virtual environment:
 
-```bash
-# Activate the venv
+```
 source .venv/bin/activate
-
-# Then run directly
 python -m dittmann_maug.cli check-data
-python -m dittmann_maug.cli inspect
-python -m dittmann_maug.cli stage1 --year 2000 --rf 0.0664
 ```
 
-### Option 3: Using the console script
+## Data Setup
 
-Once you have data files set up:
+Place files in DROPBOX folder:
 
-```bash
-uv run dittmann-maug check-data
-uv run dittmann-maug inspect
-uv run dittmann-maug stage1 --year 2000 --rf 0.0664
-```
-
----
-
-## 📁 Data Setup
-
-### Option 1: Local DROPBOX Folder (Simple)
-
-Place ExecuComp parquet files at:
-
-```
 DROPBOX/execucomp/
-├── anncomp.parquet       # Annual compensation data
-├── codirfin.parquet      # Company director/financial data
-├── coperol.parquet       # (Optional) CEO role data
-└── stgrttab.parquet      # (Optional, for Stage 3) Stock grant table
+  anncomp.parquet
+  codirfin.parquet
+  coperol.parquet
+  stgrttab.parquet
+
+Or use environment variable for Dropbox cloud storage:
+
+For zsh, add to ~/.zshrc:
+
+```
+export DM_DROPBOX_ROOT="$HOME/Dropbox/Research/ExecuComp"
 ```
 
-### Option 2: Dropbox Folder + Environment Variable (Recommended) ✅
+For bash, add to ~/.bashrc:
 
-This is more convenient if your data is in Dropbox. It keeps data in one place and syncs automatically.
+```
+export DM_DROPBOX_ROOT="$HOME/Dropbox/Research/ExecuComp"
+```
 
-#### Step 1: Set Up Dropbox Environment Variable
+Then reload:
 
-**For zsh (if you use `zsh`):**
-
-```bash
-# Add this line to your ~/.zshrc file
-echo 'export DM_DROPBOX_ROOT="$HOME/Dropbox/path-to-your-execucomp-data"' >> ~/.zshrc
-
-# Reload your shell
+```
 source ~/.zshrc
 ```
 
-**For bash (if you use `bash`):**
+## Troubleshooting
 
-```bash
-# Add this line to your ~/.bashrc file
-echo 'export DM_DROPBOX_ROOT="$HOME/Dropbox/path-to-your-execucomp-data"' >> ~/.bashrc
+Missing files error is normal. Add ExecuComp data files to proceed.
 
-# Reload your shell
-source ~/.bashrc
-```
-
-#### Step 2: Update the Path
-
-Replace `path-to-your-execucomp-data` with your actual Dropbox path:
-
-```bash
-# Example: If your data is in ~/Dropbox/Research/ExecuComp
-export DM_DROPBOX_ROOT="$HOME/Dropbox/Research/ExecuComp"
-
-# Or with full path
-export DM_DROPBOX_ROOT="/Users/dhirajs/Dropbox/Research/ExecuComp"
-```
-
-#### Step 3: Verify Setup
-
-```bash
-# Reload terminal to apply changes
-source ~/.zshrc   # or ~/.bashrc
-
-# Test it
-uv run python -m dittmann_maug.cli check-data
-
-# You should see the paths of your data files, or a helpful error message
-```
-
-#### Step 4: Expected Dropbox Structure
-
-Your Dropbox folder should have this structure:
+Check environment variable:
 
 ```
-~/Dropbox/Research/ExecuComp/          (or your chosen path)
-├── execucomp/
-│   ├── anncomp.parquet               # Annual compensation
-│   ├── codirfin.parquet              # Company/director/financial data
-│   ├── coperol.parquet               # (Optional)
-│   └── stgrttab.parquet              # (Optional, needed for Stage 3)
-└── out/
-    ├── stage1_contract_inputs_2000.parquet
-    ├── stage1_contract_inputs_1999.parquet
-    └── ... (outputs saved here)
-```
-
----
-
-### Comparison: Local vs Dropbox
-
-| Feature | Local `DROPBOX/` | Dropbox + Env Var |
-|---------|------------------|-------------------|
-| **Setup time** | 2 minutes | 3 minutes |
-| **Data backup** | Manual | Automatic ✅ |
-| **Disk usage** | ~5GB locally | Only in Dropbox |
-| **Multi-machine** | Copy to each | Works everywhere ✅ |
-| **Data sync** | Manual | Auto-sync ✅ |
-| **Simplicity** | Simpler | Better for teams ✅ |
-
----
-
-### Troubleshooting
-
-**If you get "ModuleNotFoundError":**
-```bash
-cd /Users/dhirajs/Desktop/project/Dev-dittmann-maug-contracts/dittmann-maug-contracts
-uv run python -m dittmann_maug.cli check-data
-```
-
-**If you get "Missing required files":**
-- Check that `DM_DROPBOX_ROOT` is set correctly
-- Verify parquet files exist in `$DM_DROPBOX_ROOT/execucomp/`
-- Verify Dropbox is syncing (check Dropbox app)
-
-**To check your environment variable:**
-```bash
 echo $DM_DROPBOX_ROOT
-# Should print your Dropbox path
 ```
 
-**To temporarily override:**
-```bash
+Override temporarily:
+
+```
 export DM_DROPBOX_ROOT="/different/path"
-uv run python -m dittmann_maug.cli check-data
 ```
 
 ---
