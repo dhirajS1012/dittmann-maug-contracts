@@ -16,3 +16,8 @@ data/raw/**/*.parquet
 # Generated outputs
 output/*.parquet
 output/**/*.parquet
+
+# Non-versioned materials (raw PDFs and reference files)
+DROPBOX/
+DROPBOX/**
+
