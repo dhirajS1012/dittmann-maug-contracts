@@ -9,5 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# Dropbox
-DROPBOX/
+# User data (copy ExecuComp files here)
+data/raw/*.parquet
+data/raw/**/*.parquet
+
+# Generated outputs
+output/*.parquet
+output/**/*.parquet

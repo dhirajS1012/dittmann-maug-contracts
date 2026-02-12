@@ -10,10 +10,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dittmann-maug")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    c = sub.add_parser("check-data", help="Check required input files exist")
+    c = sub.add_parser("check-data", help="Check required input files exist (copy data to data/raw/execucomp/)")
     c.add_argument("--repo-root", default=".", help="Repo root (default: current directory)")
 
-    i = sub.add_parser("inspect", help="Print quick stats about input tables")
+    i = sub.add_parser("inspect", help="Print quick stats about input tables (copy data to data/raw/execucomp/)")
     i.add_argument("--repo-root", default=".", help="Repo root (default: current directory)")
 
     s = sub.add_parser("stage1", help="Build stage1 contract inputs (phi, ns, p0, d, sigma, rf)")
