@@ -85,7 +85,7 @@ export DM_DROPBOX_ROOT="/different/path"
 
 ---
 
-## 🧪 Test Commands
+##  Test Commands
 
 Once you have data files, try these:
 
@@ -107,7 +107,7 @@ uv run python -m dittmann_maug.cli stage1 --year 1999 --rf 0.0550
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Python not found
 Make sure you're in the project directory:
@@ -126,7 +126,7 @@ This is expected until you add data files to `DROPBOX/execucomp/`
 
 ---
 
-## 📦 Dependencies Installed
+##  Dependencies Installed
 
 ```
 numpy>=2.4.2          # Numerical computing
@@ -141,12 +141,12 @@ scipy>=1.13.0         # For Black-Scholes optimization
 
 ---
 
-## ✨ What's Next?
+##  What's Next?
 
-1. ✅ **CLI working** - Can run check-data/inspect/stage1 commands
-2. ⏭️ **Add data files** - Place ExecuComp parquet files in `DROPBOX/execucomp/`
-3. ⏭️ **Test Stage 1** - Run with real data and verify outputs
-4. ⏭️ **Implement Stage 2 & 3** - W0 calculation and option aggregation
+1. **CLI working** - Can run check-data/inspect/stage1 commands
+2. **Add data files** - Place ExecuComp parquet files in `DROPBOX/execucomp/`
+3. **Test Stage 1** - Run with real data and verify outputs
+4. **Implement Stage 2 & 3** - W0 calculation and option aggregation
 
 ---
 
