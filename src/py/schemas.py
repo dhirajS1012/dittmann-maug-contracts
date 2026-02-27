@@ -36,6 +36,16 @@ class ExecuCompTables:
 
 
 @dataclass(frozen=True)
+class PipelineResult:
+    contracts: pd.DataFrame
+    paper_table1: pd.DataFrame
+    replicated_table1: pd.DataFrame
+    table1_diff: pd.DataFrame
+    table1_stats_yaml: str
+    validation_report_markdown: str
+
+
+@dataclass(frozen=True)
 class ContractParameters:
     execid: int
     permid: int
@@ -52,4 +62,3 @@ class ContractParameters:
     d: Optional[float] = None
     rf: Optional[float] = None
     error_code: Optional[int] = None
-

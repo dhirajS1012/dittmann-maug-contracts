@@ -44,26 +44,44 @@ def main() -> int:
         return 0
 
     try:
-        output_df = run_pipeline(config)
-    except NotImplementedError as exc:
-        print(str(exc))
-        print("Step 2 is complete (interfaces + pipeline scaffold).")
-        print("Continue with Steps 3-5 for full contract construction.")
-        return 0
+        result = run_pipeline(config)
     except FileNotFoundError as exc:
         print(str(exc))
         return 1
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = (
+    contracts_parquet_path = (
         config.output_dir
         / f"contracts_{config.measurement_year}_{config.history_years}yrs.parquet"
     )
-    output_df.to_parquet(output_path, index=False)
-    print(f"Wrote {len(output_df)} rows to {output_path}")
+    contracts_csv_path = (
+        config.output_dir
+        / f"contracts_{config.measurement_year}_{config.history_years}yrs.csv"
+    )
+    paper_table1_path = config.output_dir / "paper_table1.csv"
+    replicated_table1_path = config.output_dir / "replicated_table1.csv"
+    table1_diff_path = config.output_dir / "table1_diff.csv"
+    table1_stats_path = config.output_dir / "table1_stats.yaml"
+    validation_report_path = config.output_dir / "validation_report.md"
+
+    result.contracts.to_parquet(contracts_parquet_path, index=False)
+    result.contracts.to_csv(contracts_csv_path, index=False)
+    result.paper_table1.to_csv(paper_table1_path, index=False)
+    result.replicated_table1.to_csv(replicated_table1_path, index=False)
+    result.table1_diff.to_csv(table1_diff_path, index=False)
+    table1_stats_path.write_text(result.table1_stats_yaml, encoding="utf-8")
+    validation_report_path.write_text(result.validation_report_markdown, encoding="utf-8")
+
+    print(f"Wrote contracts parquet: {contracts_parquet_path}")
+    print(f"Wrote contracts csv: {contracts_csv_path}")
+    print(f"Wrote paper table reference: {paper_table1_path}")
+    print(f"Wrote replicated table summary: {replicated_table1_path}")
+    print(f"Wrote table diff csv: {table1_diff_path}")
+    print(f"Wrote table stats yaml: {table1_stats_path}")
+    print(f"Wrote validation report: {validation_report_path}")
+    print(f"Contract rows: {len(result.contracts)}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

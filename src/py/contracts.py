@@ -1,8 +1,221 @@
 from __future__ import annotations
 
+import math
+from typing import Callable
+
+import numpy as np
 import pandas as pd
 
 from schemas import ContractParameters, ExecuCompTables, RunConfig
+
+
+MATURITY_REDUCTION_FACTOR = 0.7
+
+# SAS IML arrays R and R6 (year-indexed).
+R_ONE_YEAR_BY_YEAR: dict[int, float] = {
+    1993: 3.5,
+    1994: 3.54,
+    1995: 7.05,
+    1996: 5.09,
+    1997: 5.61,
+    1998: 5.24,
+    1999: 4.51,
+    2000: 6.12,
+}
+R_SIX_YEAR_BY_YEAR: dict[int, float] = {
+    1993: 6.05,
+    1994: 5.26,
+    1995: 7.78,
+    1996: 5.45,
+    1997: 6.4,
+    1998: 5.48,
+    1999: 4.7,
+    2000: 6.64,
+}
+
+# SAS a18 select(year_num+1) mapping.
+RF_BY_MEASUREMENT_YEAR: dict[int, float] = {
+    1997: 0.0640,
+    1998: 0.0548,
+    1999: 0.0470,
+    2000: 0.0664,
+}
+
+
+def _to_float(value: object) -> float:
+    if pd.isna(value):
+        return float("nan")
+    return float(value)
+
+
+def _sas_max(a: float, b: float) -> float:
+    # SAS max() ignores missing values unless all are missing.
+    if math.isnan(a) and math.isnan(b):
+        return float("nan")
+    if math.isnan(a):
+        return b
+    if math.isnan(b):
+        return a
+    return max(a, b)
+
+
+def _tax_rate_for_year(year: int | float) -> float:
+    if pd.isna(year):
+        return float("nan")
+    y = int(year)
+    if y == 1992:
+        return 0.31
+    if y == 1993:
+        return 0.396
+    if y > 1993:
+        return 0.42
+    return float("nan")
+
+
+def _grow_wealth_across_years(
+    wealth: float,
+    start_year: int | float,
+    end_year: int | float,
+) -> float:
+    if math.isnan(wealth) or pd.isna(start_year) or pd.isna(end_year):
+        return float("nan")
+
+    grown = wealth
+    for year in range(int(start_year) + 1, int(end_year) + 1):
+        rate = R_ONE_YEAR_BY_YEAR.get(year)
+        if rate is None:
+            return float("nan")
+        grown = grown * (1 + rate / 100.0)
+    return grown
+
+
+def _norm_cdf(x: float) -> float:
+    if math.isnan(x):
+        return float("nan")
+    return 0.5 * (1 + math.erf(x / math.sqrt(2.0)))
+
+
+def _black_scholes_call_and_delta(
+    *,
+    s0: float,
+    strike: float,
+    rf: float,
+    sigma: float,
+    maturity: float,
+) -> tuple[float, float]:
+    if strike == 0:
+        # Match SAS handling: BS=S0, Nd1=1 when strike is zero.
+        return s0, 1.0
+
+    if (
+        math.isnan(s0)
+        or math.isnan(strike)
+        or math.isnan(rf)
+        or math.isnan(sigma)
+        or math.isnan(maturity)
+    ):
+        return float("nan"), float("nan")
+
+    if s0 <= 0 or strike <= 0 or sigma <= 0 or maturity <= 0:
+        return float("nan"), float("nan")
+
+    pvk = strike * math.exp(-rf * maturity)
+    vol = sigma * math.sqrt(maturity)
+    if pvk <= 0 or vol <= 0:
+        return float("nan"), float("nan")
+
+    d1 = math.log(s0 / pvk) / vol + 0.5 * vol
+    d2 = d1 - vol
+    nd1 = _norm_cdf(d1)
+    nd2 = _norm_cdf(d2)
+    bs = s0 * nd1 - pvk * nd2
+    return bs, nd1
+
+
+def _nelder_mead_2d(
+    objective: Callable[[np.ndarray], float],
+    start: np.ndarray,
+    lower_bounds: np.ndarray,
+    max_iter: int = 500,
+    tol: float = 1e-10,
+) -> tuple[np.ndarray, bool]:
+    alpha = 1.0
+    gamma = 2.0
+    rho = 0.5
+    sigma = 0.5
+
+    x0 = np.maximum(start.astype(float), lower_bounds)
+    step = np.maximum(np.abs(x0) * 0.05, np.array([0.1, 0.1], dtype=float))
+    simplex = np.array(
+        [
+            x0,
+            np.maximum(x0 + np.array([step[0], 0.0]), lower_bounds),
+            np.maximum(x0 + np.array([0.0, step[1]]), lower_bounds),
+        ]
+    )
+    values = np.array([objective(point) for point in simplex], dtype=float)
+
+    for _ in range(max_iter):
+        order = np.argsort(values)
+        simplex = simplex[order]
+        values = values[order]
+
+        if (
+            np.max(np.abs(simplex[1:] - simplex[0])) < tol
+            and np.max(np.abs(values[1:] - values[0])) < tol
+        ):
+            return simplex[0], True
+
+        centroid = (simplex[0] + simplex[1]) / 2.0
+        reflected = np.maximum(centroid + alpha * (centroid - simplex[2]), lower_bounds)
+        reflected_val = objective(reflected)
+
+        if values[0] <= reflected_val < values[1]:
+            simplex[2] = reflected
+            values[2] = reflected_val
+            continue
+
+        if reflected_val < values[0]:
+            expanded = np.maximum(
+                centroid + gamma * (reflected - centroid),
+                lower_bounds,
+            )
+            expanded_val = objective(expanded)
+            if expanded_val < reflected_val:
+                simplex[2] = expanded
+                values[2] = expanded_val
+            else:
+                simplex[2] = reflected
+                values[2] = reflected_val
+            continue
+
+        contracted = np.maximum(
+            centroid + rho * (simplex[2] - centroid),
+            lower_bounds,
+        )
+        contracted_val = objective(contracted)
+        if contracted_val < values[2]:
+            simplex[2] = contracted
+            values[2] = contracted_val
+            continue
+
+        simplex[1] = np.maximum(simplex[0] + sigma * (simplex[1] - simplex[0]), lower_bounds)
+        simplex[2] = np.maximum(simplex[0] + sigma * (simplex[2] - simplex[0]), lower_bounds)
+        values[1] = objective(simplex[1])
+        values[2] = objective(simplex[2])
+
+    order = np.argsort(values)
+    best = simplex[order][0]
+    return best, False
+
+
+def _merge_anncomp_coperol(tables: ExecuCompTables) -> pd.DataFrame:
+    return tables.anncomp.merge(
+        tables.coperol,
+        on=["co_per_rol", "year"],
+        how="outer",
+        suffixes=("", "_coperol"),
+    )
 
 
 def apply_sas_sample_filters(
@@ -12,22 +225,9 @@ def apply_sas_sample_filters(
 ) -> pd.DataFrame:
     """
     Reproduce SAS sample-selection logic up to work.a10.
-
-    This implements Step 4:
-    - CEO selection + linked salary rule,
-    - backward exclusion from shrown/pinclopt,
-    - continuity/history requirement,
-    - multi-company exclusion.
     """
-    # SAS work.a1: merge anncomp and coperol.
-    a1 = tables.anncomp.merge(
-        tables.coperol,
-        on=["co_per_rol", "year"],
-        how="outer",
-        suffixes=("", "_coperol"),
-    )
+    a1 = _merge_anncomp_coperol(tables)
 
-    # SAS work.a2a / work.a2b / work.a2.
     a2a = a1.loc[
         a1["year"].eq(config.measurement_year),
         ["co_per_rol", "ceoann", "execid"],
@@ -40,10 +240,8 @@ def apply_sas_sample_filters(
     a2 = a2[(a2["ceoann"] == "CEO") & a2["salary"].notna()]
     flagged_execids = a2["execid"].dropna().astype("Int64").unique()
 
-    # SAS work.a3: keep full exec history up to reference year for selected execids.
     a3 = a1[a1["execid"].isin(flagged_execids) & a1["year"].le(config.reference_year)]
 
-    # SAS work.a4-a6: drop rows with missing shrown / pinclopt='TRUE' and all prior rows.
     a4 = a3.copy()
     a4["invalid_obs"] = a4["shrown"].isna() | a4["pinclopt"].eq("TRUE")
     a4 = a4.sort_values(
@@ -56,7 +254,6 @@ def apply_sas_sample_filters(
     ].cummax()
     a6 = a4[~a4["drop_from_here_backward"]].copy()
 
-    # SAS work.a7: enforce required history years.
     if config.history_years > 1:
         required_years = list(
             range(
@@ -78,7 +275,6 @@ def apply_sas_sample_filters(
     else:
         a7 = a6.copy()
 
-    # SAS work.a8-a10: drop execs appearing in >1 company in any same year.
     year_freq = (
         a7.dropna(subset=["execid", "year"])
         .groupby(["execid", "year"])
@@ -90,7 +286,6 @@ def apply_sas_sample_filters(
     multi_company_execids = max_freq[max_freq > 1].index
     a10 = a7[~a7["execid"].isin(multi_company_execids)].copy()
 
-    # SAS work.a10 construction fields.
     a10["total_salary"] = (
         a10["salary"] + a10["bonus"] + a10["othann"] + a10["ltip"] + a10["allothtot"]
     )
@@ -99,6 +294,515 @@ def apply_sas_sample_filters(
     a10["permid_num"] = a10["permid"].astype("Int64")
 
     return a10.reset_index(drop=True)
+
+
+def _build_a12(a10: pd.DataFrame, tables: ExecuCompTables) -> pd.DataFrame:
+    codirfin_cols = [
+        "permid",
+        "year",
+        "prccf",
+        "ajex",
+        "divyield",
+        "fyr",
+        "shrsout",
+        "bs_volatility",
+    ]
+    if "mktval" in tables.codirfin.columns:
+        codirfin_cols.append("mktval")
+    a11 = tables.codirfin[codirfin_cols].copy()
+    if "mktval" not in a11.columns:
+        a11["mktval"] = float("nan")
+
+    a12 = a10.merge(a11, on=["permid", "year"], how="left")
+    a12 = a12[a12["co_per_rol"].notna()].copy()
+
+    a12["shrown_a"] = a12["shrown"] * a12["ajex"]
+    a12["shrsout_a"] = a12["shrsout"] * a12["ajex"]
+    a12["prccf_a"] = a12["prccf"] / a12["ajex"]
+    a12["dps_a"] = (a12["divyield"] / 100.0) * (a12["prccf"] / a12["ajex"])
+    a12["no"] = (a12["uexnumex"] + a12["uexnumun"]) * a12["ajex"]
+    a12["rstkhld_a"] = a12["rstkhld"] * a12["ajex"]
+    a12["uexnumun_a"] = a12["uexnumun"] * a12["ajex"]
+    a12["uexnumex_a"] = a12["uexnumex"] * a12["ajex"]
+    a12["fyr_num"] = a12["fyr"]
+
+    a12 = a12.sort_values(["execid", "year"], kind="stable").reset_index(drop=True)
+    return a12
+
+
+def _build_a14(a12: pd.DataFrame, tables: ExecuCompTables) -> pd.DataFrame:
+    a13 = a12[["co_per_rol", "year", "execid", "ajex"]].copy()
+    a14 = a13.merge(
+        tables.stgrttab[["co_per_rol", "year", "numsecur", "expric", "exdate"]],
+        on=["co_per_rol", "year"],
+        how="left",
+    )
+    a14 = a14[a14["execid"].notna()].copy()
+    a14["numsecur"] = a14["numsecur"].fillna(0.0)
+    a14["numsecur_a"] = a14["numsecur"] * a14["ajex"]
+    a14["execid_num"] = a14["execid"].astype("Int64")
+    a14["year_num"] = a14["year"].astype("Int64")
+    a14["exdate"] = pd.to_datetime(a14["exdate"], errors="coerce")
+    a14["expric_a"] = a14["expric"] / a14["ajex"]
+
+    a14 = a14[
+        ["execid_num", "year_num", "numsecur_a", "expric_a", "exdate"]
+    ].sort_values(["execid_num", "year_num"], kind="stable")
+    a14 = a14.reset_index(drop=True)
+    return a14
+
+
+def _fiscal_year_end(year: int | float, month: int | float) -> pd.Timestamp | pd.NaT:
+    if pd.isna(year) or pd.isna(month):
+        return pd.NaT
+    month_int = int(month)
+    if month_int in {4, 6, 9, 11}:
+        day = 30
+    elif month_int == 2:
+        day = 28
+    else:
+        day = 31
+    try:
+        return pd.Timestamp(int(year), month_int, day)
+    except ValueError:
+        return pd.NaT
+
+
+def _representative_option_from_portfolio(
+    *,
+    last_row: pd.Series,
+    option_rows: pd.DataFrame,
+) -> tuple[float, float, float, int]:
+    error = 0
+
+    last_year = int(last_row["year"])
+    s0 = _to_float(last_row["prccf_a"])
+    sigma = _to_float(last_row["bs_volatility"])
+    rf = R_SIX_YEAR_BY_YEAR.get(last_year, float("nan")) / 100.0
+
+    if math.isnan(s0):
+        error = -5
+
+    if option_rows.empty:
+        options = pd.DataFrame(
+            [{"numsecur_a": 0.0, "expric_a": float("nan"), "exdate": pd.NaT}]
+        )
+    else:
+        options = option_rows[["numsecur_a", "expric_a", "exdate"]].copy()
+
+    options["numsecur_a"] = options["numsecur_a"].fillna(0.0)
+    options["expric_a"] = pd.to_numeric(options["expric_a"], errors="coerce")
+    options["exdate"] = pd.to_datetime(options["exdate"], errors="coerce")
+
+    fiscal_end = _fiscal_year_end(last_row["year"], last_row["fyr_num"])
+    if pd.isna(fiscal_end):
+        options["maturity"] = float("nan")
+    else:
+        options["maturity"] = (
+            (options["exdate"] - fiscal_end).dt.days / 365.25 * MATURITY_REDUCTION_FACTOR
+        )
+
+    invalid_maturity = (options["maturity"] < 0) | (
+        options["maturity"].isna() & (options["numsecur_a"] > 0)
+    )
+    if invalid_maturity.any():
+        error = -1
+        options.loc[invalid_maturity, "maturity"] = float("nan")
+
+    bs_values: list[float] = []
+    delta_values: list[float] = []
+    for _, row in options.iterrows():
+        strike = _to_float(row["expric_a"])
+        maturity = _to_float(row["maturity"])
+        bs, delta = _black_scholes_call_and_delta(
+            s0=s0,
+            strike=strike,
+            rf=rf,
+            sigma=sigma,
+            maturity=maturity,
+        )
+        bs_values.append(bs)
+        delta_values.append(delta)
+    options["bs"] = bs_values
+    options["delta"] = delta_values
+
+    new_num = _to_float(options["numsecur_a"].sum())
+    new_gain = 0.0
+    new_avg_mat = 0.0
+    for _, row in options.iterrows():
+        n = _to_float(row["numsecur_a"])
+        strike = _to_float(row["expric_a"])
+        maturity = _to_float(row["maturity"])
+        gain = n * _sas_max(0.0, s0 - strike)
+        new_gain = gain + new_gain
+        mat_term = n * maturity
+        if math.isnan(new_avg_mat) or math.isnan(mat_term):
+            new_avg_mat = float("nan")
+        else:
+            new_avg_mat = new_avg_mat + mat_term
+    if new_num > 0 and not math.isnan(new_avg_mat):
+        new_avg_mat = new_avg_mat / new_num
+
+    unex = _to_float(last_row["uexnumun_a"])
+    ex = _to_float(last_row["uexnumex_a"])
+    inmonun = _to_float(last_row["inmonun"])
+    inmonex = _to_float(last_row["inmonex"])
+
+    if new_num > unex:
+        agg_un_n = 0.0
+        gain_un = 0.0
+        agg_ex_n = _sas_max(ex - new_num + unex, 0.0)
+        gain_ex = _sas_max(inmonex - (new_num - unex) * new_gain / new_num, 0.0)
+    else:
+        agg_un_n = unex - new_num
+        gain_un = _sas_max(inmonun - new_gain, 0.0)
+        agg_ex_n = ex
+        gain_ex = inmonex
+
+    agg_un_k = float("nan")
+    agg_ex_k = float("nan")
+    if agg_un_n > 0:
+        agg_un_k = s0 - gain_un / agg_un_n
+    if agg_ex_n > 0:
+        agg_ex_k = s0 - gain_ex / agg_ex_n
+    if (pd.notna(agg_un_k) and agg_un_k < 0) or (pd.notna(agg_ex_k) and agg_ex_k < 0):
+        agg_un_k = float("nan")
+        agg_ex_k = float("nan")
+        error = -4
+
+    if new_avg_mat == 0:
+        agg_un_t = 9.0 * MATURITY_REDUCTION_FACTOR
+        agg_ex_t = 6.0 * MATURITY_REDUCTION_FACTOR
+    else:
+        agg_un_t = _sas_max(new_avg_mat - 1.0 * MATURITY_REDUCTION_FACTOR, 1.0)
+        agg_ex_t = _sas_max(new_avg_mat - 3.0 * MATURITY_REDUCTION_FACTOR, 1.0)
+
+    agg_rows = pd.DataFrame(
+        [
+            {"numsecur_a": agg_un_n, "expric_a": agg_un_k, "maturity": agg_un_t},
+            {"numsecur_a": agg_ex_n, "expric_a": agg_ex_k, "maturity": agg_ex_t},
+        ]
+    )
+    agg_bs_values: list[float] = []
+    agg_delta_values: list[float] = []
+    for _, row in agg_rows.iterrows():
+        strike = _to_float(row["expric_a"])
+        maturity = _to_float(row["maturity"])
+        bs, delta = _black_scholes_call_and_delta(
+            s0=s0,
+            strike=strike,
+            rf=rf,
+            sigma=sigma,
+            maturity=maturity,
+        )
+        agg_bs_values.append(bs)
+        agg_delta_values.append(delta)
+    agg_rows["bs"] = agg_bs_values
+    agg_rows["delta"] = agg_delta_values
+
+    options_all = pd.concat(
+        [
+            agg_rows[["numsecur_a", "expric_a", "maturity", "bs", "delta"]],
+            options[["numsecur_a", "expric_a", "maturity", "bs", "delta"]],
+        ],
+        ignore_index=True,
+    )
+
+    total_options = unex + ex
+    if math.isnan(sigma):
+        error = -3
+
+    k_out = float("nan")
+    t_out = float("nan")
+
+    if total_options > 0 and options_all["numsecur_a"].sum() > 0 and error == 0:
+        valid = (
+            options_all["numsecur_a"].gt(0)
+            & options_all["bs"].notna()
+            & options_all["delta"].notna()
+        )
+        weighted = options_all[valid]
+        if weighted.empty:
+            error = -2
+        else:
+            weights = weighted["numsecur_a"].astype(float).to_numpy()
+            bs_vals = weighted["bs"].astype(float).to_numpy()
+            delta_vals = weighted["delta"].astype(float).to_numpy()
+            bsq = float(np.sum(weights * bs_vals) / np.sum(weights))
+            nd1q = float(np.sum(weights * delta_vals) / np.sum(weights))
+
+            def objective(k_t: np.ndarray) -> float:
+                rep_bs, rep_nd1 = _black_scholes_call_and_delta(
+                    s0=s0,
+                    strike=float(k_t[0]),
+                    rf=rf,
+                    sigma=sigma,
+                    maturity=float(k_t[1]),
+                )
+                if (
+                    math.isnan(rep_bs)
+                    or math.isnan(rep_nd1)
+                    or math.isnan(bsq)
+                    or math.isnan(nd1q)
+                    or bsq == 0
+                    or nd1q == 0
+                ):
+                    return 1e12
+                return ((rep_bs - bsq) / bsq) ** 2 + ((rep_nd1 - nd1q) / nd1q) ** 2
+
+            start = np.array([s0 if pd.notna(s0) else 1.0, 10.0], dtype=float)
+            bounds = np.array([0.1, 0.1], dtype=float)
+            best, converged = _nelder_mead_2d(objective, start, bounds)
+            k_out = float(best[0])
+            t_out = float(best[1])
+            if not converged:
+                error = -2
+
+    if total_options == 0:
+        k_out = s0
+        t_out = 10.0
+
+    return total_options, k_out, t_out, int(error)
+
+
+def _compute_ceo_iml_output(a12: pd.DataFrame, a14: pd.DataFrame) -> pd.DataFrame:
+    output_rows: list[dict[str, float]] = []
+    if a12.empty:
+        return pd.DataFrame(
+            columns=["execid_num", "W0", "nS", "nO", "nSr", "error", "K", "T"]
+        )
+
+    a12_sorted = a12.sort_values(["execid", "year"], kind="stable")
+    for execid, group in a12_sorted.groupby("execid", sort=True, dropna=False):
+        if pd.isna(execid):
+            continue
+
+        g = group.sort_values("year", kind="stable").reset_index(drop=True)
+        first = g.iloc[0]
+
+        year0 = _to_float(first["year"])
+        tau0 = _tax_rate_for_year(year0)
+        total_salary0 = _to_float(first["total_salary"])
+        soptexer0 = _to_float(first["soptexer"])
+        if math.isnan(soptexer0):
+            wealth = total_salary0 * (1 - tau0)
+        else:
+            wealth = (total_salary0 + soptexer0) * (1 - tau0)
+
+        current_n_s = _to_float(first["shrown_a"])
+        current_n_sr = _to_float(first["rstkhld_a"])
+
+        for idx in range(1, len(g)):
+            prev = g.iloc[idx - 1]
+            row = g.iloc[idx]
+
+            prev_year = _to_float(prev["year"])
+            current_year = _to_float(row["year"])
+            tau = _tax_rate_for_year(current_year)
+            prev_permid = _to_float(prev["permid_num"])
+            current_permid = _to_float(row["permid_num"])
+
+            wealth = _grow_wealth_across_years(wealth, prev_year, current_year)
+
+            current_n_s_row = _to_float(row["shrown_a"])
+            current_n_sr_row = _to_float(row["rstkhld_a"])
+            current_price = _to_float(row["prccf_a"])
+            current_rstkgrnt = _to_float(row["rstkgrnt"])
+            current_total_salary = _to_float(row["total_salary"])
+            current_soptexer = _to_float(row["soptexer"])
+            current_dps = _to_float(row["dps_a"])
+
+            if current_permid == prev_permid:
+                rst_tax = _sas_max(
+                    0.0,
+                    (current_n_sr - current_n_sr_row) * current_price + current_rstkgrnt,
+                ) * tau
+                wealth = (
+                    wealth
+                    + current_rstkgrnt
+                    - rst_tax
+                    + (current_n_s * current_dps + current_total_salary + current_soptexer)
+                    * (1 - tau)
+                    - (current_n_s_row - current_n_s) * current_price
+                )
+                current_n_s = current_n_s_row
+                current_n_sr = current_n_sr_row
+            else:
+                prev_price = _to_float(prev["prccf_a"])
+                prev_inmonex = _to_float(prev["inmonex"])
+                wealth = wealth + _sas_max(current_n_s - current_n_sr, 0.0) * prev_price
+                wealth = wealth + prev_inmonex
+                wealth = (
+                    wealth
+                    + current_total_salary * (1 - tau)
+                    + current_rstkgrnt
+                    - current_n_s_row * current_price
+                )
+                current_n_s = current_n_s_row
+                current_n_sr = current_n_sr_row
+
+        last_row = g.iloc[-1]
+        options_last_year = a14[
+            (a14["execid_num"] == int(last_row["execid_num"]))
+            & (a14["year_num"] == int(last_row["year"]))
+        ]
+        n_o, strike_k, maturity_t, error_code = _representative_option_from_portfolio(
+            last_row=last_row,
+            option_rows=options_last_year,
+        )
+
+        output_rows.append(
+            {
+                "execid_num": int(last_row["execid_num"]),
+                "W0": wealth,
+                "nS": current_n_s,
+                "nO": n_o,
+                "nSr": current_n_sr,
+                "error": error_code,
+                "K": strike_k,
+                "T": maturity_t,
+            }
+        )
+
+    return pd.DataFrame(output_rows)
+
+
+def _bs_from_contract_row(row: pd.Series) -> tuple[float, float, float]:
+    k = _to_float(row["K"])
+    t = _to_float(row["T"])
+    p0 = _to_float(row["P0"])
+    d = _to_float(row["d"])
+    rf = _to_float(row["rf"])
+    sigma = _to_float(row["sigma"])
+
+    if any(math.isnan(v) for v in [k, t, p0, d, rf, sigma]) or t <= 0 or sigma <= 0:
+        return float("nan"), float("nan"), float("nan")
+
+    pvk = k * math.exp(-rf * t)
+    s0 = p0 * math.exp(-d * t)
+    vol = sigma * math.sqrt(t)
+    if pvk <= 0 or s0 <= 0 or vol <= 0:
+        return float("nan"), float("nan"), float("nan")
+
+    d1 = math.log(s0 / pvk) / vol + 0.5 * vol
+    d2 = d1 - vol
+    nd1 = _norm_cdf(d1)
+    nd2 = _norm_cdf(d2)
+    bs = s0 * nd1 - pvk * nd2
+    return nd1, nd2, bs
+
+
+def _construct_contract_dataset(config: RunConfig, tables: ExecuCompTables) -> pd.DataFrame:
+    a10 = apply_sas_sample_filters(config=config, tables=tables)
+    if a10.empty:
+        return pd.DataFrame()
+
+    a1 = _merge_anncomp_coperol(tables)
+    a12 = _build_a12(a10, tables)
+    a14 = _build_a14(a12, tables)
+    ceo = _compute_ceo_iml_output(a12, a14)
+
+    if ceo.empty:
+        return pd.DataFrame()
+
+    a15 = ceo[(ceo["W0"].notna()) & (ceo["W0"] >= 0) & (ceo["error"] >= 0)].copy()
+    a15["year_num"] = config.reference_year
+    if a15.empty:
+        return pd.DataFrame()
+
+    a12_merge = a12.copy()
+    a12_merge["year_num"] = a12_merge["year"].astype("Int64")
+    a16 = a15.merge(a12_merge, on=["execid_num", "year_num"], how="left")
+    a16["nSu"] = np.maximum(0.0, a16["nS"] - a16["nSr"])
+    a16["nS"] = a16["nS"] / a16["shrsout_a"] / 1000.0
+    a16["nSu"] = a16["nSu"] / a16["shrsout_a"] / 1000.0
+    a16["nO"] = a16["nO"] / a16["shrsout_a"] / 1000.0
+    # In current ExecuComp extracts, mktval is in $m and shrsout is in millions.
+    # Keep contract values in dollars by scaling firm shares to units of shares.
+    a16["NumOfShares"] = a16["shrsout_a"] * 1_000_000.0
+    a16["K"] = a16["K"] * a16["NumOfShares"]
+    p0_from_price = a16["prccf_a"] * a16["NumOfShares"]
+    p0_from_mktval = pd.to_numeric(a16["mktval"], errors="coerce") * 1_000_000.0
+    a16["P0"] = np.where(p0_from_mktval.notna(), p0_from_mktval, p0_from_price)
+    a16["sigma"] = a16["bs_volatility"]
+    a16["d"] = a16["divyield"] / 100.0
+    a16 = a16[a16["sigma"].notna() & a16["shrsout_a"].notna()].copy()
+    a16 = a16[
+        a16["nS"].ge(0.0)
+        & a16["nS"].le(1.0)
+        & a16["nO"].ge(0.0)
+        & a16["nO"].le(1.0)
+    ].copy()
+    if a16.empty:
+        return pd.DataFrame()
+
+    a16 = a16[
+        [
+            "execid_num",
+            "W0",
+            "nS",
+            "nSu",
+            "nO",
+            "K",
+            "T",
+            "P0",
+            "NumOfShares",
+            "sigma",
+            "year_num",
+            "permid",
+            "d",
+        ]
+    ]
+
+    a18 = a16.copy()
+    a18["rf"] = a18["year_num"].map(
+        lambda y: RF_BY_MEASUREMENT_YEAR.get(int(y) + 1, float("nan"))
+        if pd.notna(y)
+        else float("nan")
+    )
+    a18 = a18.drop(columns=["year_num"])
+
+    a19 = a1.loc[a1["year"].eq(config.measurement_year)].copy()
+    a19["phi"] = a19["salary"] + a19["bonus"] + a19["othann"] + a19["allothtot"]
+    a19["execid_num"] = a19["execid"].astype("Int64")
+    a19 = a19[["execid_num", "phi", "permid"]]
+
+    a20 = a18.merge(a19, on=["execid_num", "permid"], how="left")
+    a20 = a20[a20["W0"].notna() & a20["phi"].notna()].copy()
+    if a20.empty:
+        return pd.DataFrame()
+
+    nd1_values: list[float] = []
+    nd2_values: list[float] = []
+    bs_values: list[float] = []
+    for _, row in a20.iterrows():
+        nd1, nd2, bs = _bs_from_contract_row(row)
+        nd1_values.append(nd1)
+        nd2_values.append(nd2)
+        bs_values.append(bs)
+    a20["Nd1"] = nd1_values
+    a20["Nd2"] = nd2_values
+    a20["BS"] = bs_values
+    a20["year"] = config.measurement_year
+
+    final_df = a20.copy()
+    final_df["CV"] = final_df["sigma"] * np.sqrt(final_df["T"])
+    final_df["LD"] = np.exp(
+        (-final_df["d"] - 0.5 * (final_df["sigma"] ** 2)) * final_df["T"]
+    ) / math.sqrt(2.0 * math.pi)
+    final_df["PC"] = final_df["P0"] * np.exp(
+        final_df["T"]
+        * (final_df["rf"] - final_df["d"] - (final_df["sigma"] ** 2) / 2.0)
+    )
+    final_df["MD2"] = (
+        np.log(final_df["K"] / final_df["P0"])
+        - (final_df["rf"] - final_df["d"]) * final_df["T"]
+        + (final_df["sigma"] ** 2) * final_df["T"] / 2.0
+    ) / (final_df["sigma"] * np.sqrt(final_df["T"]))
+
+    final_df = final_df.sort_values(["execid_num", "permid"], kind="stable")
+    final_df = final_df.reset_index(drop=True)
+    return final_df
 
 
 def get_contract_parameters(
@@ -113,13 +817,46 @@ def get_contract_parameters(
     history_rows: pd.DataFrame,
 ) -> ContractParameters:
     """
-    Compute contract parameters for one executive-year.
+    Single-observation API. This returns directly computable fields from supplied rows.
 
-    This is the core single-observation API requested in TODOS-HUMAN.
-    Full implementation is delivered in Step 5.
+    Full dataset-level SAS-equivalent construction is handled by
+    get_contract_parameters_for_dataset().
     """
-    raise NotImplementedError(
-        "get_contract_parameters interface is ready; implementation is part of Step 5."
+    _ = option_rows
+    _ = history_rows
+
+    phi = (
+        _to_float(anncomp_row.get("salary"))
+        + _to_float(anncomp_row.get("bonus"))
+        + _to_float(anncomp_row.get("othann"))
+        + _to_float(anncomp_row.get("allothtot"))
+    )
+
+    ajex = _to_float(codirfin_row.get("ajex"))
+    shrsout = _to_float(codirfin_row.get("shrsout"))
+    prccf = _to_float(codirfin_row.get("prccf"))
+    divyield = _to_float(codirfin_row.get("divyield"))
+    sigma = _to_float(codirfin_row.get("bs_volatility"))
+
+    num_of_shares = shrsout * ajex * 1000.0
+    p0 = (prccf / ajex) * num_of_shares
+    d = divyield / 100.0
+    rf = RF_BY_MEASUREMENT_YEAR.get(measurement_year, float("nan"))
+
+    shrown = _to_float(anncomp_row.get("shrown"))
+    ns = (shrown * ajex) / (shrsout * ajex * 1000.0)
+
+    return ContractParameters(
+        execid=execid,
+        permid=permid,
+        reference_year=reference_year,
+        measurement_year=measurement_year,
+        phi=phi,
+        p0=p0,
+        d=d,
+        sigma=sigma,
+        rf=rf,
+        ns=ns,
     )
 
 
@@ -129,10 +866,10 @@ def get_contract_parameters_for_dataset(
     tables: ExecuCompTables,
 ) -> pd.DataFrame:
     """
-    Dataset-level wrapper around get_contract_parameters.
+    Dataset-level constructor.
 
-    Step 4 returns the SAS-equivalent filtered history panel (work.a10).
-    Step 5 will construct final contract parameters from this panel.
+    Step 5 behavior:
+    - applies Step 4 sample filters,
+    - constructs contract parameters and derived Black-Scholes fields.
     """
-    return apply_sas_sample_filters(config=config, tables=tables)
-
+    return _construct_contract_dataset(config=config, tables=tables)

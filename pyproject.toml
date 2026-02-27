@@ -1,0 +1,13 @@
+[project]
+name = "dittmann-maug-contracts"
+version = "0.1.0"
+description = "Replication pipeline for Dittmann and Maug (2007) contract construction."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "pyarrow>=23.0.1",
+    "pytest>=9.0.2",
+]
+

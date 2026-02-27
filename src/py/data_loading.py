@@ -45,14 +45,27 @@ TABLE_REQUIRED_COLUMNS: dict[str, set[str]] = {
 TABLE_ALIAS_COLUMNS: dict[str, dict[str, str]] = {
     "anncomp": {
         "co_per_rol_id": "co_per_rol",
+        "shrown_excl_opts": "shrown",
+        "shrown_tot": "shrown",
+        "opt_exer_val": "soptexer",
+        "opt_exer_num": "soptexsh",
+        "stock_unvest_num": "rstkhld",
+        "opt_unex_unexer_num": "uexnumun",
+        "opt_unex_exer_num": "uexnumex",
+        "opt_unex_unexer_est_val": "inmonun",
+        "opt_unex_exer_est_val": "inmonex",
+        "gvkey": "permid",
     },
     "coperol": {
         "co_per_rol_id": "co_per_rol",
         "ceo_ann": "ceoann",
+        "pceo": "ceoann",
+        "gvkey": "permid",
     },
     "codirfin": {
         "bsvolatility": "bs_volatility",
         "volatility": "bs_volatility",
+        "gvkey": "permid",
     },
     "stgrttab": {
         "num_secur": "numsecur",
@@ -66,6 +79,8 @@ TABLE_NUMERIC_COLUMNS: dict[str, set[str]] = {
     "anncomp": {
         "co_per_rol",
         "year",
+        "execid",
+        "permid",
         "salary",
         "bonus",
         "othann",
@@ -97,7 +112,7 @@ TABLE_NUMERIC_COLUMNS: dict[str, set[str]] = {
 
 
 TABLE_INT_COLUMNS: dict[str, set[str]] = {
-    "anncomp": {"co_per_rol", "year"},
+    "anncomp": {"co_per_rol", "year", "execid", "permid"},
     "coperol": {"co_per_rol", "year", "execid", "permid"},
     "codirfin": {"permid", "year", "fyr"},
     "stgrttab": {"co_per_rol", "year"},
@@ -109,6 +124,23 @@ TABLE_SORT_KEYS: dict[str, list[str]] = {
     "coperol": ["co_per_rol", "year"],
     "codirfin": ["permid", "year"],
     "stgrttab": ["co_per_rol", "year"],
+}
+
+
+TABLE_DEFAULT_VALUES: dict[str, dict[str, object]] = {
+    "anncomp": {
+        "pinclopt": "FALSE",
+        "rstkhld": 0.0,
+        "soptexer": 0.0,
+        "soptexsh": 0.0,
+        "uexnumun": 0.0,
+        "uexnumex": 0.0,
+        "inmonun": 0.0,
+        "inmonex": 0.0,
+    },
+    "coperol": {
+        "ceoann": "NON-CEO",
+    },
 }
 
 
@@ -138,9 +170,11 @@ def _apply_aliases(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
         return frame
 
     rename_map: dict[str, str] = {}
+    occupied_targets = set(frame.columns)
     for source_col, target_col in aliases.items():
-        if source_col in frame.columns and target_col not in frame.columns:
+        if source_col in frame.columns and target_col not in occupied_targets:
             rename_map[source_col] = target_col
+            occupied_targets.add(target_col)
 
     if not rename_map:
         return frame
@@ -160,17 +194,33 @@ def _validate_required_columns(table_name: str, frame: pd.DataFrame) -> None:
     )
 
 
+def _apply_default_columns(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
+    defaults = TABLE_DEFAULT_VALUES.get(table_name, {})
+    if not defaults:
+        return frame
+
+    normalized = frame.copy()
+    for col, default in defaults.items():
+        if col not in normalized.columns:
+            normalized[col] = default
+        else:
+            normalized[col] = normalized[col].fillna(default)
+    return normalized
+
+
 def _coerce_numeric_columns(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
     normalized = frame.copy()
     for col in TABLE_NUMERIC_COLUMNS[table_name]:
-        normalized[col] = pd.to_numeric(normalized[col], errors="coerce")
+        if col in normalized.columns:
+            normalized[col] = pd.to_numeric(normalized[col], errors="coerce")
     return normalized
 
 
 def _coerce_int_columns(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
     normalized = frame.copy()
     for col in TABLE_INT_COLUMNS[table_name]:
-        normalized[col] = normalized[col].astype("Int64")
+        if col in normalized.columns:
+            normalized[col] = normalized[col].astype("Int64")
     return normalized
 
 
@@ -200,11 +250,72 @@ def normalize_table(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
 
     normalized = _normalize_column_names(frame)
     normalized = _apply_aliases(table_name, normalized)
+    normalized = _apply_default_columns(table_name, normalized)
     _validate_required_columns(table_name, normalized)
     normalized = _coerce_numeric_columns(table_name, normalized)
     normalized = _coerce_int_columns(table_name, normalized)
     normalized = _normalize_table_values(table_name, normalized)
     normalized = _sort_table(table_name, normalized)
+    return normalized
+
+
+def _anncomp_lookup_for_coperol(anncomp: pd.DataFrame) -> pd.DataFrame:
+    required_cols = ["co_per_rol", "year", "execid", "permid", "ceoann"]
+    available_cols = [col for col in required_cols if col in anncomp.columns]
+    if not {"co_per_rol", "year"}.issubset(available_cols):
+        return pd.DataFrame()
+
+    lookup = anncomp[available_cols].drop_duplicates(
+        subset=["co_per_rol", "year"],
+        keep="first",
+    )
+    return lookup
+
+
+def _normalize_coperol_with_anncomp(raw_coperol: pd.DataFrame, anncomp: pd.DataFrame) -> pd.DataFrame:
+    normalized = _normalize_column_names(raw_coperol)
+    normalized = _apply_aliases("coperol", normalized)
+    normalized = _apply_default_columns("coperol", normalized)
+
+    ann_lookup = _anncomp_lookup_for_coperol(anncomp)
+    if "year" not in normalized.columns and not ann_lookup.empty:
+        role_years = ann_lookup[["co_per_rol", "year"]].drop_duplicates()
+        if "co_per_rol" in normalized.columns:
+            role_level = normalized.drop_duplicates(subset=["co_per_rol"], keep="first")
+            normalized = role_years.merge(role_level, on="co_per_rol", how="left")
+        else:
+            normalized = role_years.copy()
+
+    if not ann_lookup.empty and {"co_per_rol", "year"}.issubset(normalized.columns):
+        normalized = normalized.merge(
+            ann_lookup,
+            on=["co_per_rol", "year"],
+            how="left",
+            suffixes=("", "_anncomp"),
+        )
+        for col in ["execid", "permid", "ceoann"]:
+            ann_col = f"{col}_anncomp"
+            if ann_col not in normalized.columns:
+                continue
+            if col not in normalized.columns:
+                normalized[col] = normalized[ann_col]
+            else:
+                normalized[col] = normalized[col].where(
+                    normalized[col].notna(),
+                    normalized[ann_col],
+                )
+            normalized = normalized.drop(columns=[ann_col])
+
+    missing_after_fill = TABLE_REQUIRED_COLUMNS["coperol"] - set(normalized.columns)
+    if missing_after_fill and set(TABLE_REQUIRED_COLUMNS["coperol"]).issubset(ann_lookup.columns):
+        normalized = ann_lookup.copy()
+
+    normalized = _apply_default_columns("coperol", normalized)
+    _validate_required_columns("coperol", normalized)
+    normalized = _coerce_numeric_columns("coperol", normalized)
+    normalized = _coerce_int_columns("coperol", normalized)
+    normalized = _normalize_table_values("coperol", normalized)
+    normalized = _sort_table("coperol", normalized)
     return normalized
 
 
@@ -216,7 +327,10 @@ def load_required_tables(config: RunConfig) -> ExecuCompTables:
 
     paths = required_table_paths(config)
     anncomp = normalize_table("anncomp", pd.read_parquet(paths["anncomp"]))
-    coperol = normalize_table("coperol", pd.read_parquet(paths["coperol"]))
+    coperol = _normalize_coperol_with_anncomp(
+        pd.read_parquet(paths["coperol"]),
+        anncomp,
+    )
     codirfin = normalize_table("codirfin", pd.read_parquet(paths["codirfin"]))
     stgrttab = normalize_table("stgrttab", pd.read_parquet(paths["stgrttab"]))
 
