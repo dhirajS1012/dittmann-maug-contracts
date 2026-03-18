@@ -1,0 +1,102 @@
+sample_sizes:
+  panel_a: 598
+  panel_b: 1400
+mean_comparison:
+  a_phi_base_salary____000_:
+    paper_mean: 2037
+    replicated_mean: 2051.09
+    abs_diff: 14.0911
+    pct_diff: 0.691756
+  a_ns_stock____:
+    paper_mean: 2.29
+    replicated_mean: 3.21566
+    abs_diff: 0.92566
+    pct_diff: 40.4218
+  a_no_options____:
+    paper_mean: 1.29
+    replicated_mean: 2.15168
+    abs_diff: 0.86168
+    pct_diff: 66.7969
+  a_noexp__dt__options_adjusted____:
+    paper_mean: 1.22
+    replicated_mean: 2.0498
+    abs_diff: 0.829796
+    pct_diff: 68.0161
+  a_nsp0_value_of_stock____m_:
+    paper_mean: 91.98
+    replicated_mean: 104.236
+    abs_diff: 12.2558
+    pct_diff: 13.3244
+  a_nobs_value_of_options____m_:
+    paper_mean: 29.47
+    replicated_mean: 55.6659
+    abs_diff: 26.1959
+    pct_diff: 88.8899
+  a_p0_market_value____m_:
+    paper_mean: 9857
+    replicated_mean: 9895.94
+    abs_diff: 38.9378
+    pct_diff: 0.395027
+  a_w0_wealth____m_:
+    paper_mean: 34.6
+    replicated_mean: 34.3244
+    abs_diff: 0.275619
+    pct_diff: -0.796586
+  a_n_d1__option_delta:
+    paper_mean: 0.834
+    replicated_mean: 0.847512
+    abs_diff: 0.0135118
+    pct_diff: 1.62012
+  a_t_maturity__years_:
+    paper_mean: 5.89
+    replicated_mean: 5.53718
+    abs_diff: 0.352822
+    pct_diff: -5.99019
+  a_sigma_volatility:
+    paper_mean: 0.377
+    replicated_mean: 0.378858
+    abs_diff: 0.00185786
+    pct_diff: 0.492801
+  a_age_age_of_ceo:
+    paper_mean: 57
+    replicated_mean: 56.9284
+    abs_diff: 0.0715564
+    pct_diff: -0.125537
+  b_phi_base_salary____000_:
+    paper_mean: 1718
+    replicated_mean: 1662.67
+    abs_diff: 55.3311
+    pct_diff: -3.22067
+  b_ns_stock____:
+    paper_mean: 2.97
+    replicated_mean: 2.97518
+    abs_diff: 0.00517782
+    pct_diff: 0.174337
+  b_no_options____:
+    paper_mean: 1.45
+    replicated_mean: 2.55773
+    abs_diff: 1.10773
+    pct_diff: 76.3951
+  b_nsp0_value_of_stock____m_:
+    paper_mean: 132.44
+    replicated_mean: 128.077
+    abs_diff: 4.36266
+    pct_diff: -3.29406
+  b_p0_market_value____m_:
+    paper_mean: 8012
+    replicated_mean: 7850.22
+    abs_diff: 161.783
+    pct_diff: -2.01925
+  b_sigma_stock_price_volatility:
+    paper_mean: 0.435
+    replicated_mean: 0.437784
+    abs_diff: 0.00278357
+    pct_diff: 0.639901
+  b_age_age_of_ceo:
+    paper_mean: 55
+    replicated_mean: 55.0847
+    abs_diff: 0.0847328
+    pct_diff: 0.15406
+overall:
+  mean_abs_diff: 16.71
+  max_abs_diff: 161.783
