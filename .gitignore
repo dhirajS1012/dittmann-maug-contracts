@@ -14,3 +14,6 @@ DROPBOX/
 
 # Env and rclone secrets (use .env.example as template)
 .env
+
+# macOS
+.DS_Store
