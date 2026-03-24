@@ -31,6 +31,7 @@ class RunConfig:
     history_years: int
     data_dir: Path = field(default_factory=lambda: Path("data/raw"))
     output_dir: Path = field(default_factory=lambda: Path("output"))
+    rf_override: Optional[float] = None
 
     @property
     def measurement_year(self) -> int:

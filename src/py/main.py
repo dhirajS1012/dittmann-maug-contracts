@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only validate required input parquet files.",
     )
+    parser.add_argument(
+        "--rf",
+        type=float,
+        default=None,
+        help="Override risk-free rate (e.g. 0.05). Default: use hardcoded DM values.",
+    )
     return parser.parse_args()
 
 
@@ -41,6 +47,7 @@ def main() -> int:
         history_years=args.history_years,
         data_dir=args.data_dir,
         output_dir=args.output_dir,
+        rf_override=args.rf,
     )
 
     missing = missing_required_tables(config)

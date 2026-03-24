@@ -1,3 +1,6 @@
+> **DEPRECATED:** This is a condensed reference. The single source of truth is
+> [`dittman-maug-contract-construction-working.md`](dittman-maug-contract-construction-working.md).
+
 # AI Generated: Dittman and Maug (2007) CEO Compensation Contract Construction Procedure
 
 This document provides a comprehensive description of the methodology used by Dittman and Maug (2007) to construct CEO compensation contracts from ExecuComp data. It is intended to be a detailed guide for replicating the dataset construction. This procedure is derived from the paper's "Empirical Methodology and Data" section (Section II), Appendix B, and is thoroughly informed by the logic in the `Dataset Construction Macro V4.sas` script.

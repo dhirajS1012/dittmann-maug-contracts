@@ -372,7 +372,7 @@ def _build_a14(a12: pd.DataFrame, tables: ExecuCompTables) -> pd.DataFrame:
     return a14
 
 
-def _fiscal_year_end(year: int | float, month: int | float) -> pd.Timestamp | pd.NaT:
+def _fiscal_year_end(year: int | float, month: int | float) -> pd.Timestamp:
     """Return the last calendar date of the fiscal year given its ending month."""
     if pd.isna(year) or pd.isna(month):
         return pd.NaT
@@ -787,11 +787,14 @@ def _construct_contract_dataset(config: RunConfig, tables: ExecuCompTables) -> p
     ]
 
     a18 = a16.copy()
-    a18["rf"] = a18["year_num"].map(
-        lambda y: RF_BY_MEASUREMENT_YEAR.get(int(y) + 1, float("nan"))
-        if pd.notna(y)
-        else float("nan")
-    )
+    if config.rf_override is not None:
+        a18["rf"] = config.rf_override
+    else:
+        a18["rf"] = a18["year_num"].map(
+            lambda y: RF_BY_MEASUREMENT_YEAR.get(int(y) + 1, float("nan"))
+            if pd.notna(y)
+            else float("nan")
+        )
     a18 = a18.drop(columns=["year_num"])
 
     a19 = a1.loc[a1["year"].eq(config.measurement_year)].copy()
@@ -870,7 +873,7 @@ def get_contract_parameters(
     divyield = _to_float(codirfin_row.get("divyield"))
     sigma = _to_float(codirfin_row.get("bs_volatility"))
 
-    num_of_shares = shrsout * ajex * 1000.0
+    num_of_shares = shrsout * ajex * 1_000_000.0
     p0 = (prccf / ajex) * num_of_shares
     d = divyield / 100.0
     rf = RF_BY_MEASUREMENT_YEAR.get(measurement_year, float("nan"))

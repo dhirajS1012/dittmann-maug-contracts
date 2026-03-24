@@ -76,7 +76,7 @@ Below, "Used for" refers to the variables in the contract-construction pipeline.
 | `ajex` | Split adjustment factor | Adjust shares/options/strikes/prices |
 | `divyield` | Dividend yield (%) | `d`, dividends in `W0` flow |
 | `fyr` | Fiscal year-end month | Option maturity from grant date to FY-end |
-| `shrsout` | Shares outstanding (thousands) | Normalize `n_s`, `n_o`; compute `P0` |
+| `shrsout` | Shares outstanding (millions in current ExecuComp; thousands in original SAS data) | Normalize `n_s`, `n_o`; compute `P0` |
 | `bs_volatility` | Volatility input | `sigma`, option valuation |
 
 #### Table: `dir.stgrttab`
@@ -246,13 +246,6 @@ rf = 0.0664  (6.64%)
 - Used to grow $W_0$ forward to future value
 - Higher rates → lower option value
 
-**Verification Check:**
-```
-✓ Is rf set to the appropriate Treasury yield for the measurement year?
-✓ Is it in decimal form (0.0664 not 6.64)?
-✓ Does it match historical Treasury rates for that year?
-```
-
 ---
 
 ### Variable 6: $n_s$ (Fraction of Shares Held by CEO)
@@ -285,13 +278,6 @@ ns = (number of shares CEO owns) / (total number of shares in company)
 - Stock splits are already accounted for
 - This is snapshot as of fiscal year-end
 
-**Verification Check:**
-```
-✓ Is ns typically 0.0001 to 0.05 (0.01% to 5%)?
-✓ Are stock splits accounted for?
-✓ Is it the CEO's personal shares (not options)?
-```
-
 ---
 
 ## Part 4: The Most Complex Variables
@@ -300,7 +286,7 @@ ns = (number of shares CEO owns) / (total number of shares in company)
 
 **What it represents:** CEO's accumulated outside wealth (not tied to this company's stock)
 
-**This is the HARD part.** Here's how it's calculated:
+**This is the most complex variable.** The calculation proceeds in two stages:
 
 #### Step 1: First Year in Database ($t_E$)
 
@@ -366,14 +352,6 @@ The SAS code essentially implements a **wealth accumulation model**:
 
 **Key insight:** $W_0$ is meant to capture the fact that a long-tenured CEO has built up outside wealth and is not purely dependent on current-year compensation.
 
-**Verification Check:**
-```
-✓ Does W0 grow from year to year?
-✓ Is prior W0 grown at risk-free rate?
-✓ Are annual cash income and tax adjustments added?
-✓ Is W0 typically much larger than annual phi?
-```
-
 ---
 
 ### Variable 7b: $n_o$, $K$, $T$ (Options) - The Hardest Part
@@ -396,14 +374,6 @@ The SAS code essentially implements a **wealth accumulation model**:
 - Options are the **most important** variable for incentive alignment
 - More volatile stock → option value increases → CEO incentive increases
 - Options create **nonlinear payoff** (only valuable if stock > strike)
-
-**Verification Check:**
-```
-✓ Are all option grants collected (current + prior years)?
-✓ Is maturity adjusted for early exercise (×0.7)?
-✓ Is optimization done correctly (BS and delta matching)?
-✓ Do the results match the original SAS output?
-```
 
 ---
 
@@ -458,20 +428,6 @@ EXCLUDE if any of the following:
   - W0 < 0 (negative wealth doesn't make sense)
   - Missing sigma (can't price options)
   - Options calculation errors
-```
-
-### Verification Checklist
-
-When you verify our Python code matches the SAS code:
-
-```
-✓ Are missing salaries excluded?
-✓ Are pinclopt='TRUE' flagged CEOs excluded?
-✓ Are CEOs checked for continuous history?
-✓ Are multi-company CEOs excluded?
-✓ Are final data quality checks applied?
-
-Expected result: ~30-50% of raw ExecuComp records → ~10-15% survive filtering
 ```
 
 ---
@@ -531,7 +487,9 @@ Wealth uses `comptabl$salary`, `comptabl$bonus`, `comptabl$othann`, `comptabl$lt
 Option approximation uses `comptabl$uexnumun`, `comptabl$uexnumex`, `comptabl$inmonun`, `comptabl$inmonex`, `stgrttab$numsecur`, `stgrttab$expric`, `stgrttab$exdate`, `codirfin$bs_volatility`, `codirfin$fyr`.
 
 6. Normalize to contract parameters:
-`n_s <- shares_held / (codirfin$shrsout * 1000 * codirfin$ajex)`, `n_o <- options_held / (codirfin$shrsout * 1000 * codirfin$ajex)`, `P0 <- (codirfin$prccf/codirfin$ajex) * (codirfin$shrsout*1000*codirfin$ajex)`, `d <- codirfin$divyield/100`, `sigma <- codirfin$bs_volatility`.
+`n_s <- shrown_a / (shrsout_a * 1000)`, `n_o <- options_a / (shrsout_a * 1000)`, `P0 <- prccf_a * shrsout_a * 1_000_000` (ajex cancels in all three), `d <- codirfin$divyield/100`, `sigma <- codirfin$bs_volatility`.
+
+Note: The SAS code used `shrsout * 1000` because the original ExecuComp stored shrsout in thousands. Current ExecuComp parquets store shrsout in millions, so our Python uses `shrsout_a * 1_000_000`. The fraction formulas are equivalent because ajex cancels.
 
 7. Add final-period fixed pay:
 `phi <- comptabl$salary + comptabl$bonus + comptabl$othann + comptabl$allothtot` at `year + 1`.
@@ -545,12 +503,12 @@ Option approximation uses `comptabl$uexnumun`, `comptabl$uexnumex`, `comptabl$in
 Let's say we pick a CEO: `GVKEY=1000, EXECID=123` and manually verify:
 
 #### Step 1: Check Filters
-```
-✓ Does this CEO have salary in year 2000?
-✓ Is pinclopt = 'FALSE' for all years 1995-2000?
-✓ Does CEO appear in every year 1995-2000 (no gaps)?
-✓ Does CEO work for only one company in each year?
-```
+
+The CEO must pass all sample-selection filters:
+- Has salary in measurement year (2000)
+- `pinclopt = 'FALSE'` for all years 1995-1999
+- Appears in every year 1995-1999 (no gaps)
+- Works for only one company in each year
 
 #### Step 2: Calculate phi (Base Compensation)
 ```
@@ -568,25 +526,29 @@ phi = a1$salary + a1$bonus + a1$othann + a1$allothtot = $800K
 From fiscal-year-1999 `codirfin`:
   codirfin$prccf = $50
   codirfin$ajex = 1.0
-  codirfin$shrsout = 100  (thousands)
-  
+  codirfin$shrsout = 100  (millions in current ExecuComp data)
+
 price_adjusted = codirfin$prccf / codirfin$ajex = $50
-shares_adjusted = codirfin$shrsout × 1000 × codirfin$ajex = 100 million shares
+NumOfShares = codirfin$shrsout × 1,000,000 × codirfin$ajex = 100 million shares
 
 P0 = 50 × 100M = $5,000M = $5 billion
+
+Note: ajex cancels in P0 (price/ajex × shrsout×ajex = price × shrsout).
 ```
 
 #### Step 4: Calculate ns (Ownership Fraction)
 ```
 From year-1999 `comptabl` + `codirfin`:
-  comptabl$shrown = 0.5  (thousands)
+  comptabl$shrown = 500  (thousands of shares = 500,000 shares)
   codirfin$ajex = 1.0
-  codirfin$shrsout = 100  (thousands)
-  
-shrown_adjusted = comptabl$shrown × codirfin$ajex = 0.5M shares
-shrsout_adjusted = codirfin$shrsout × 1000 × codirfin$ajex = 100M shares
+  codirfin$shrsout = 100  (millions of shares = 100,000,000 shares)
 
-ns = 0.5M / 100M = 0.005 (0.5% ownership)
+shrown_adjusted = comptabl$shrown × codirfin$ajex = 500 (thousands)
+shrsout_adjusted = codirfin$shrsout × codirfin$ajex = 100 (millions)
+
+ns = shrown_adjusted / (shrsout_adjusted × 1000) = 500 / 100,000 = 0.005 (0.5% ownership)
+
+Note: ajex cancels in ns too (shrown×ajex / shrsout×ajex×1000 = shrown / shrsout×1000).
 ```
 
 #### Step 5: Get d, sigma, rf (Simple Direct Values)
@@ -647,20 +609,8 @@ no = total_option_qty / total_shares = 0.175M / 100M = 0.00175
 ```
 Now compare your calculated values to what the SAS code produced:
 
-Your calculation → Python output:
-  phi = $800K ✓
-  ns = 0.005 ✓
-  p0 = $5,000M ✓
-  d = 0.025 ✓
-  sigma = 0.35 ✓
-  rf = 0.0664 ✓
-  W0 = ? (should match)
-  no = 0.00175 ? (should match)
-  K = $35 ? (should match)
-  T = 4.5 ? (should match)
-
-If all match → verification successful! ✅
-If any differ → debug why
+Compare your Python output to the hand-calculated values above.
+Any deviation > 1% warrants investigation.
 ```
 
 ---
@@ -772,16 +722,7 @@ Debug checklist:
 
 ---
 
-## Next Steps for You
-
-1. **Read the SAS code** - Focus on sections in Part 6 above
-2. **Review our Python code** - Compare line-by-line to SAS logic
-3. **Spot-check 3 CEOs** - Hand-verify calculations
-4. **Run full dataset** - Check distributions match expected ranges
-5. **Compare to original output** - If you have SAS output available
-6. **Debug any mismatches** - Use the troubleshooting checklist
-
 ---
 
-*Last Updated: February 10, 2026*
-*Document Type: Educational Manual | AI-Generated*
+*Last Updated: March 24, 2026*
+*Single source of truth for the DM contract construction methodology.*
